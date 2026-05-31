@@ -13,6 +13,8 @@ var (
 )
 
 func handleClient(connection net.Conn) {
+	defer connection.Close()
+	
 	buffer := make([]byte, 1024)
 
 	for {
@@ -35,6 +37,8 @@ func main() {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
+
+	defer listener.Close()
 
 	for {
 		connection, err := listener.Accept()
