@@ -12,6 +12,18 @@ var (
 	_ = os.Exit
 )
 
+func handleClient(connection net.Conn) {
+	buffer := make([]byte, 1024)
+
+	for {
+		_, error := connection.Read(buffer)
+		if error != nil {
+			break
+		}
+		connection.Write([]byte("+PONG\r\n"))
+	}
+}
+
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
@@ -24,18 +36,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	connection, err := listener.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
-	}
-	buffer := make([]byte, 1024)
-
 	for {
-		_, error := connection.Read(buffer)
-		if error != nil {
-			break
+		connection, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
 		}
-		connection.Write([]byte("+PONG\r\n"))
+
+		go handleClient((connection))
 	}
 }
