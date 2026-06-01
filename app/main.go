@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -12,17 +14,49 @@ var (
 	_ = os.Exit
 )
 
+func RESP_parser(buffer []byte, size int) (Value,error) {
+
+	rd := NewReader(bytes.NewReader(buffer))
+
+	value, _, err := rd.ReadValue()
+
+	if err != nil {
+		return value,err
+	}
+
+	return value,nil
+}
+
+func handleCommand(value Value, connection net.Conn) {
+	switch value.typ{		
+	case Array:
+		if strings.ToLower(string(value.array[0].str)) == "echo"{
+			connection.Write([]byte("+" + string( value.array[1].str) + "\r\n"))
+		}
+		if strings.ToLower(string(value.array[0].str)) == "ping"{
+			connection.Write([]byte("+PONG\r\n"))
+		}
+	}
+}
+
 func handleClient(connection net.Conn) {
 	defer connection.Close()
-	
+
 	buffer := make([]byte, 1024)
 
 	for {
-		_, error := connection.Read(buffer)
+		size, error := connection.Read(buffer)
 		if error != nil {
 			break
 		}
-		connection.Write([]byte("+PONG\r\n"))
+
+		value,err := RESP_parser(buffer, size)
+		if err != nil{
+			connection.Write([]byte("-ERR unknown protocol or bad syntax\r\n"))
+			continue
+		}
+
+		handleCommand(value, connection)
 	}
 }
 
