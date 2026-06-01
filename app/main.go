@@ -40,7 +40,7 @@ func handle_set(key string, value string, px *int, db map[string]string) {
 	}
 }
 
-func handleCommand(value Value, connection net.Conn, db map[string]string) {
+func handleCommand(value Value, connection net.Conn, db map[string]string, lists map[string][]string) {
 	switch value.typ {
 	case Array:
 		if strings.ToLower(string(value.array[0].str)) == "echo" {
@@ -67,6 +67,10 @@ func handleCommand(value Value, connection net.Conn, db map[string]string) {
 		if strings.ToLower(string(value.array[0].str)) == "get" {
 			connection.Write([]byte("+" + db[string(value.array[1].str)] + "\r\n"))
 		}
+		if strings.ToLower(string(value.array[0].str)) == "prush" {
+			lists[string(value.array[1].str)] = append(lists[string(value.array[1].str)], string(value.array[2].str))
+			connection.Write([]byte(":" + strconv.Itoa(len(lists[string(value.array[1].str)])) + "\r\n"))
+		}
 	}
 }
 
@@ -76,6 +80,7 @@ func handleClient(connection net.Conn) {
 	buffer := make([]byte, 1024)
 
 	db := make(map[string]string)
+	lists := map[string][]string{}
 
 	for {
 		size, error := connection.Read(buffer)
@@ -89,7 +94,7 @@ func handleClient(connection net.Conn) {
 			continue
 		}
 
-		handleCommand(value, connection, db)
+		handleCommand(value, connection, db, lists)
 	}
 }
 
