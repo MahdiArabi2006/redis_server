@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -14,33 +16,55 @@ var (
 	_ = os.Exit
 )
 
-func RESP_parser(buffer []byte, size int) (Value,error) {
+func RESP_parser(buffer []byte, size int) (Value, error) {
 
 	rd := NewReader(bytes.NewReader(buffer))
 
 	value, _, err := rd.ReadValue()
 
 	if err != nil {
-		return value,err
+		return value, err
 	}
 
-	return value,nil
+	return value, nil
+}
+
+func handle_set(key string, value string, px *int, db map[string]string) {
+	db[key] = value
+
+	if px != nil {
+		delay := (*px) * int(time.Millisecond)
+		time.AfterFunc(time.Duration(delay), func() {
+			delete(db, key)
+		})
+	}
 }
 
 func handleCommand(value Value, connection net.Conn, db map[string]string) {
-	switch value.typ{		
+	switch value.typ {
 	case Array:
-		if strings.ToLower(string(value.array[0].str)) == "echo"{
-			connection.Write([]byte("+" + string( value.array[1].str) + "\r\n"))
+		if strings.ToLower(string(value.array[0].str)) == "echo" {
+			connection.Write([]byte("+" + string(value.array[1].str) + "\r\n"))
 		}
-		if strings.ToLower(string(value.array[0].str)) == "ping"{
+		if strings.ToLower(string(value.array[0].str)) == "ping" {
 			connection.Write([]byte("+PONG\r\n"))
 		}
-		if strings.ToLower(string(value.array[0].str)) == "set"{
-			db[string(value.array[1].str)] = string(value.array[2].str)
+		if strings.ToLower(string(value.array[0].str)) == "set" {
+			if len(value.array) > 3 {
+				if strings.ToLower(string(value.array[3].str)) == "px" {
+					px, err := strconv.Atoi(string(value.array[4].str))
+					if err != nil {
+						connection.Write([]byte("-px must be an positive integer\r\n"))
+						return
+					}
+					handle_set((string(value.array[1].str)), string(value.array[2].str), &px, db)
+				}
+			} else {
+				db[string(value.array[1].str)] = string(value.array[2].str)
+			}
 			connection.Write([]byte("+OK\r\n"))
 		}
-		if strings.ToLower(string(value.array[0].str)) == "get"{
+		if strings.ToLower(string(value.array[0].str)) == "get" {
 			connection.Write([]byte("+" + db[string(value.array[1].str)] + "\r\n"))
 		}
 	}
@@ -59,13 +83,13 @@ func handleClient(connection net.Conn) {
 			break
 		}
 
-		value,err := RESP_parser(buffer, size)
-		if err != nil{
+		value, err := RESP_parser(buffer, size)
+		if err != nil {
 			connection.Write([]byte("-ERR unknown protocol or bad syntax\r\n"))
 			continue
 		}
 
-		handleCommand(value, connection,db)
+		handleCommand(value, connection, db)
 	}
 }
 
