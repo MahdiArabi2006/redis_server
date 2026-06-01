@@ -68,7 +68,10 @@ func handleCommand(value Value, connection net.Conn, db map[string]string, lists
 			connection.Write([]byte("+" + db[string(value.array[1].str)] + "\r\n"))
 		}
 		if strings.ToLower(string(value.array[0].str)) == "prush" {
-			lists[string(value.array[1].str)] = append(lists[string(value.array[1].str)], string(value.array[2].str))
+			number_of_elements := len(value.array) - 2
+			for i := range number_of_elements{
+				lists[string(value.array[1].str)] = append(lists[string(value.array[1].str)], string(value.array[2 + i].str))	
+			}
 			connection.Write([]byte(":" + strconv.Itoa(len(lists[string(value.array[1].str)])) + "\r\n"))
 		}
 	}
