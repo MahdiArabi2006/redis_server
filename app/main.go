@@ -27,7 +27,7 @@ func RESP_parser(buffer []byte, size int) (Value,error) {
 	return value,nil
 }
 
-func handleCommand(value Value, connection net.Conn) {
+func handleCommand(value Value, connection net.Conn, db map[string]string) {
 	switch value.typ{		
 	case Array:
 		if strings.ToLower(string(value.array[0].str)) == "echo"{
@@ -36,6 +36,13 @@ func handleCommand(value Value, connection net.Conn) {
 		if strings.ToLower(string(value.array[0].str)) == "ping"{
 			connection.Write([]byte("+PONG\r\n"))
 		}
+		if strings.ToLower(string(value.array[0].str)) == "set"{
+			db[string(value.array[1].str)] = string(value.array[2].str)
+			connection.Write([]byte("+OK\r\n"))
+		}
+		if strings.ToLower(string(value.array[0].str)) == "get"{
+			connection.Write([]byte("+" + db[string(value.array[1].str)] + "\r\n"))
+		}
 	}
 }
 
@@ -43,6 +50,8 @@ func handleClient(connection net.Conn) {
 	defer connection.Close()
 
 	buffer := make([]byte, 1024)
+
+	db := make(map[string]string)
 
 	for {
 		size, error := connection.Read(buffer)
@@ -56,7 +65,7 @@ func handleClient(connection net.Conn) {
 			continue
 		}
 
-		handleCommand(value, connection)
+		handleCommand(value, connection,db)
 	}
 }
 
