@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -15,6 +16,11 @@ var (
 	_ = net.Listen
 	_ = os.Exit
 )
+
+var DB = make(map[string]string)
+var dbMu sync.RWMutex
+var Lists = map[string][]string{}
+var listsMu sync.RWMutex
 
 func RESP_parser(buffer []byte, size int) (Value, error) {
 
@@ -29,27 +35,119 @@ func RESP_parser(buffer []byte, size int) (Value, error) {
 	return value, nil
 }
 
-func handle_set(key string, value string, px *int, db map[string]string) {
-	db[key] = value
+func write_RESP(type_value Type, strings []string, is_array bool, size int, buffer *bytes.Buffer) error {
+	wr := NewWriter(buffer)
+	if is_array {
+		array := []Value{}
+		for i := range size {
+			val := Value{
+				typ: type_value,
+				str: []byte(strings[i]),
+			}
+			array = append(array, val)
+		}
+		value := Value{
+			typ:   type_value,
+			array: array,
+		}
+		error := wr.WriteValue(value)
+		return error
 
-	if px != nil {
-		delay := (*px) * int(time.Millisecond)
-		time.AfterFunc(time.Duration(delay), func() {
-			delete(db, key)
-		})
+	} else {
+		if type_value == Integer {
+			number, err := strconv.Atoi(strings[0])
+			if err != nil {
+				return err
+			}
+			value := Value{
+				typ:     type_value,
+				integer: number,
+			}
+			error := wr.WriteValue(value)
+			return error
+		} else {
+			value := Value{
+				typ: type_value,
+				str: []byte(strings[0]),
+			}
+			error := wr.WriteValue(value)
+			return error
+		}
 	}
 }
 
-func handleCommand(value Value, connection net.Conn, db map[string]string, lists map[string][]string) {
+func handle_ping(connection net.Conn) {
+	var buffer bytes.Buffer
+	values := []string{"PONG"}
+	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
+}
+
+func handle_echo(connection net.Conn, value string) {
+	var buffer bytes.Buffer
+	values := []string{value}
+	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
+}
+
+func handle_set(key string, value string, has_px bool, px int, connection net.Conn) {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+
+	DB[key] = value
+
+	if has_px {
+		delay := px * int(time.Millisecond)
+		time.AfterFunc(time.Duration(delay), func() {
+			delete(DB, key)
+		})
+	}
+
+	var buffer bytes.Buffer
+	values := []string{"OK"}
+	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
+}
+
+func handle_get(connection net.Conn, key string) {
+	dbMu.RLock()
+	defer dbMu.RUnlock()
+
+	var buffer bytes.Buffer
+	values := []string{DB[key]}
+	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
+}
+
+func handle_prush(connection net.Conn, number_of_elements int, list_id string, array_values []Value) {
+	listsMu.Lock()
+	defer listsMu.Unlock()
+
+	for i := range number_of_elements {
+		Lists[list_id] = append(Lists[list_id], string(array_values[2+i].str))
+	}
+
+	var buffer bytes.Buffer
+	values := []string{strconv.Itoa(len(Lists[list_id]))}
+	if write_RESP(Integer, values, false, 1, &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
+}
+
+func handleCommand(value Value, connection net.Conn) {
 	switch value.typ {
 	case Array:
 		if strings.ToLower(string(value.array[0].str)) == "echo" {
-			connection.Write([]byte("+" + string(value.array[1].str) + "\r\n"))
+			handle_echo(connection, string(value.array[1].str))
 		}
-		if strings.ToLower(string(value.array[0].str)) == "ping" {
-			connection.Write([]byte("+PONG\r\n"))
+		if strings.ToLower(string(value.array[0].str)) == PING {
+			handle_ping(connection)
 		}
-		if strings.ToLower(string(value.array[0].str)) == "set" {
+		if strings.ToLower(string(value.array[0].str)) == SET {
 			if len(value.array) > 3 {
 				if strings.ToLower(string(value.array[3].str)) == "px" {
 					px, err := strconv.Atoi(string(value.array[4].str))
@@ -57,22 +155,17 @@ func handleCommand(value Value, connection net.Conn, db map[string]string, lists
 						connection.Write([]byte("-px must be an positive integer\r\n"))
 						return
 					}
-					handle_set((string(value.array[1].str)), string(value.array[2].str), &px, db)
+					handle_set((string(value.array[1].str)), string(value.array[2].str), true, px, connection)
 				}
 			} else {
-				db[string(value.array[1].str)] = string(value.array[2].str)
+				handle_set((string(value.array[1].str)), string(value.array[2].str), false, 0, connection)
 			}
-			connection.Write([]byte("+OK\r\n"))
 		}
-		if strings.ToLower(string(value.array[0].str)) == "get" {
-			connection.Write([]byte("+" + db[string(value.array[1].str)] + "\r\n"))
+		if strings.ToLower(string(value.array[0].str)) == GET {
+			handle_get(connection, string(value.array[1].str))
 		}
-		if strings.ToLower(string(value.array[0].str)) == "prush" {
-			number_of_elements := len(value.array) - 2
-			for i := range number_of_elements{
-				lists[string(value.array[1].str)] = append(lists[string(value.array[1].str)], string(value.array[2 + i].str))	
-			}
-			connection.Write([]byte(":" + strconv.Itoa(len(lists[string(value.array[1].str)])) + "\r\n"))
+		if strings.ToLower(string(value.array[0].str)) == PRUSH {
+			handle_prush(connection, len(value.array)-2, string(value.array[1].str), value.array)
 		}
 	}
 }
@@ -81,9 +174,6 @@ func handleClient(connection net.Conn) {
 	defer connection.Close()
 
 	buffer := make([]byte, 1024)
-
-	db := make(map[string]string)
-	lists := map[string][]string{}
 
 	for {
 		size, error := connection.Read(buffer)
@@ -97,7 +187,7 @@ func handleClient(connection net.Conn) {
 			continue
 		}
 
-		handleCommand(value, connection, db, lists)
+		handleCommand(value, connection)
 	}
 }
 
