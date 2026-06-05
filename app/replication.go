@@ -45,22 +45,17 @@ func send_psync_command(connection net.Conn) {
 	}
 }
 
-func readCommandsFromMaster(connection net.Conn, config Config) {
-	buffer := make([]byte, 1024)
-
+func readCommandsFromMaster(connection net.Conn, config Config, reader *Reader) {
 	for {
-		size, err := connection.Read(buffer)
+		value, _, err := reader.ReadValue()
 		if err != nil {
 			fmt.Println("master connection closed:", err)
 			return
 		}
 
-		raw := make([]byte, size)
-		copy(raw, buffer[:size])
-
-		value, parseErr := RESP_parser(raw, len(raw))
-		if parseErr != nil {
-			fmt.Println("failed to parse command from master:", parseErr)
+		raw, err := encodeValue(value)
+		if err != nil {
+			fmt.Println("failed to encode master command:", err)
 			continue
 		}
 
@@ -75,14 +70,11 @@ func StartReplicationHandshake(config Config) error {
 		return err
 	}
 
-	send_ping(connenction)
-	buffer := make([]byte, 1024)
-	size, error := connenction.Read(buffer)
-	if error != nil {
-		return error
-	}
+	reader := NewReader(connenction)
 
-	value, err := RESP_parser(buffer, size)
+	send_ping(connenction)
+
+	value, _, err := reader.ReadValue();
 	if err != nil {
 		return err
 	}
@@ -95,12 +87,7 @@ func StartReplicationHandshake(config Config) error {
 
 	send_replconf_port(connenction, config)
 
-	size, error = connenction.Read(buffer)
-	if error != nil {
-		return error
-	}
-
-	value, err = RESP_parser(buffer, size)
+	value, _, err = reader.ReadValue();
 	if err != nil {
 		return err
 	}
@@ -113,12 +100,7 @@ func StartReplicationHandshake(config Config) error {
 
 	send_replconf_capa(connenction)
 
-	size, error = connenction.Read(buffer)
-	if error != nil {
-		return error
-	}
-
-	value, err = RESP_parser(buffer, size)
+	value, _, err = reader.ReadValue(); 
 	if err != nil {
 		return err
 	}
@@ -131,14 +113,9 @@ func StartReplicationHandshake(config Config) error {
 
 	send_psync_command(connenction)
 
-	size, error = connenction.Read(buffer)
-	if error != nil {
-		return error
-	}
-
-	value, err = RESP_parser(buffer, size)
+	value, _, err = reader.ReadValue(); 
 	if err != nil {
-		return error
+		return err
 	}
 
 	if strings.ToLower(strings.Split(string(value.str), " ")[0]) != FULLRESYNC {
@@ -147,12 +124,14 @@ func StartReplicationHandshake(config Config) error {
 
 	//fmt.Println(string(value.str))
 
-	size, error = connenction.Read(buffer)
+	buffer := make([]byte, 1024)
+
+	_, error := connenction.Read(buffer)
 	if error != nil {
 		return error
 	}
 
-	go readCommandsFromMaster(connenction, config)
+	go readCommandsFromMaster(connenction, config,reader)
 
 	return nil
 }

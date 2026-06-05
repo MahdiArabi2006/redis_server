@@ -617,3 +617,15 @@ func (wr *Writer) WriteArray(vals []Value) error { return wr.WriteValue(ArrayVal
 func (wr *Writer) WriteMultiBulk(commandName string, args ...interface{}) error {
 	return wr.WriteValue(MultiBulkValue(commandName, args...))
 }
+
+func encodeValue(value Value) ([]byte, error) {
+	var buffer bytes.Buffer
+
+	writer := NewWriter(&buffer)
+
+	if err := writer.WriteValue(value); err != nil {
+		return nil, err
+	}
+
+	return buffer.Bytes(), nil
+}

@@ -9,24 +9,20 @@ import (
 func handleClient(connection net.Conn, config Config) {
 	defer connection.Close()
 
-	buffer := make([]byte, 1024)
+	reader := NewReader(connection)
 
 	for {
-		size, error := connection.Read(buffer)
-		if error != nil {
+		value, _, erro := reader.ReadValue()
+		if erro != nil {
 			break
 		}
-
-		value, err := RESP_parser(buffer, size)
+		raw, err := encodeValue(value)
 		if err != nil {
-			connection.Write([]byte("-ERR unknown protocol or bad syntax\r\n"))
+			connection.Write([]byte("-ERR failed to encode command\r\n"))
 			continue
 		}
 
-		raw_binary := make([]byte, size)
-		copy(raw_binary, buffer[:size])
-
-		handleCommand(value, connection,config, raw_binary)
+		handleCommand(value, connection, config, raw)
 	}
 }
 
