@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -193,11 +194,13 @@ func handleClient(connection net.Conn) {
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
+	port := flag.Int("port",6379,"TCP Port")
+	flag.Parse()
 	fmt.Println("Logs from your program will appear here!")
 
 	// Uncomment the code below to pass the first stage
 	//
-	listener, err := net.Listen("tcp", "0.0.0.0:6379")
+	listener, err := net.Listen("tcp", "0.0.0.0:" + strconv.Itoa((*port)))
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
