@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"regexp"
 	"strconv"
 	"time"
 )
@@ -147,4 +148,40 @@ func handle_psync(connection net.Conn, config Config) {
 	}
 	connection.Write(append([]byte(fmt.Sprintf("$%d\r\n", len(emptyRDB))), emptyRDB...))
 	addReplica(connection)
+}
+
+func handle_get_config(connection net.Conn, config Config, key string) {
+	var buffer bytes.Buffer
+	var values []string
+	if key == "dir" {
+		values = []string{key, config.dir}
+	} else {
+		values = []string{key, config.dbfilename}
+	}
+	if write_RESP(SimpleString, values, true, 2, &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
+}
+
+func handle_key(connection net.Conn, regex string) {
+	var buffer bytes.Buffer
+	values := []string{}
+	reg, error := regexp.Compile(regex)
+	if error != nil {
+		write_RESP(Error, []string{"ERR invalid regex"}, false, 0, &buffer)
+		connection.Write(buffer.Bytes())
+		return
+	}
+
+	dbMu.RLock()
+	for key := range DB {
+		if reg.MatchString(key) {
+			values = append(values, key)
+		}
+	}
+	dbMu.RUnlock()
+	
+	if write_RESP(SimpleString, values, true, len(values), &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
 }

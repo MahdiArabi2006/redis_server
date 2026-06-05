@@ -13,16 +13,22 @@ type Config struct {
 	MasterPort       string
 	masterReplid     string
 	masterReplOffset int
+	dir              string
+	dbfilename       string
 }
 
 func LoadConfig() Config {
 	port := flag.Int("port", 6379, "TCP Port")
 	replicaof := flag.String("replicaof", "", "Master server address")
+	dir := flag.String("dir", "", "the path to the directory where the RDB file is stored")
+	dbfilename := flag.String("dbfilename", "", "the name of the RDB file ")
 	flag.Parse()
 
 	config := Config{
 		Port:      *port,
 		ReplicaOf: *replicaof,
+		dir: *dir,
+		dbfilename: *dbfilename,
 	}
 
 	if config.ReplicaOf != "" {

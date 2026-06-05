@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -21,11 +22,20 @@ var listsMu sync.RWMutex
 func main() {
 	config := LoadConfig()
 
+	if config.dir != "" && config.dbfilename != "" {
+		err := loadRDBIntoStore(config)
+		if err != nil {
+			log.Println("RDB load failed:", err)
+		} else {
+			log.Println("RDB loaded successfully")
+		}
+	}
+
 	fmt.Println("Logs from your program will appear here!")
 
-	if config.IsReplica(){
+	if config.IsReplica() {
 		error := StartReplicationHandshake(config)
-		if error != nil{
+		if error != nil {
 			fmt.Fprintf(os.Stderr, "handshake failed: %v\n", error)
 			os.Exit(1)
 		}
