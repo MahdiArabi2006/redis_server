@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"net"
 	"strconv"
+	"encoding/hex"
+	"fmt"
 	"time"
 )
 
@@ -132,9 +134,12 @@ func handle_replconf(connection net.Conn) {
 }
 
 func handle_psync(connection net.Conn, config Config){
+	var emptyRDB, _ = hex.DecodeString("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")
 	var buffer bytes.Buffer
 	values := []string{"FULLRESYNC" + " " + config.masterReplid + " " + strconv.Itoa(config.masterReplOffset)}
 	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
 		connection.Write(buffer.Bytes())
 	}
+	connection.Write(append([]byte(fmt.Sprintf("$%d\r\n", len(emptyRDB))), emptyRDB...))
+
 }

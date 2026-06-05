@@ -123,5 +123,11 @@ func StartReplicationHandshake(config Config) error {
 
 	//fmt.Println(string(value.str))
 
+	size, error = connenction.Read(buffer)
+	if error != nil {
+		return error
+	}
+
+	
 	return nil
 }
