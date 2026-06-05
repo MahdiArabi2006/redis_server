@@ -23,7 +23,10 @@ func handleClient(connection net.Conn, config Config) {
 			continue
 		}
 
-		handleCommand(value, connection,config)
+		raw_binary := make([]byte, size)
+		copy(raw_binary, buffer[:size])
+
+		handleCommand(value, connection,config, raw_binary)
 	}
 }
 

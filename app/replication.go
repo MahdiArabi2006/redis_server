@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
-	//"fmt"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -44,6 +44,30 @@ func send_psync_command(connection net.Conn) {
 		connection.Write(buffer.Bytes())
 	}
 }
+
+func readCommandsFromMaster(connection net.Conn, config Config) {
+	buffer := make([]byte, 1024)
+
+	for {
+		size, err := connection.Read(buffer)
+		if err != nil {
+			fmt.Println("master connection closed:", err)
+			return
+		}
+
+		raw := make([]byte, size)
+		copy(raw, buffer[:size])
+
+		value, parseErr := RESP_parser(raw, len(raw))
+		if parseErr != nil {
+			fmt.Println("failed to parse command from master:", parseErr)
+			continue
+		}
+
+		handleCommand(value, connection, config, raw)
+	}
+}
+
 
 func StartReplicationHandshake(config Config) error {
 	connenction, err := net.Dial("tcp", config.MasterHost+":"+config.MasterPort)
@@ -128,6 +152,7 @@ func StartReplicationHandshake(config Config) error {
 		return error
 	}
 
-	
+	go readCommandsFromMaster(connenction, config)
+
 	return nil
 }

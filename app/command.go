@@ -19,7 +19,7 @@ const (
 	FULLRESYNC string = "fullresync"
 )
 
-func handleCommand(value Value, connection net.Conn, config Config) {
+func handleCommand(value Value, connection net.Conn, config Config, raw_binary []byte) {
 	switch value.typ {
 	case Array:
 		if strings.ToLower(string(value.array[0].str)) == ECHO {
@@ -36,10 +36,10 @@ func handleCommand(value Value, connection net.Conn, config Config) {
 						connection.Write([]byte("-px must be an positive integer\r\n"))
 						return
 					}
-					handle_set((string(value.array[1].str)), string(value.array[2].str), true, px, connection)
+					handle_set((string(value.array[1].str)), string(value.array[2].str), true, px, connection,!config.IsReplica(),raw_binary)
 				}
 			} else {
-				handle_set((string(value.array[1].str)), string(value.array[2].str), false, 0, connection)
+				handle_set((string(value.array[1].str)), string(value.array[2].str), false, 0, connection,!config.IsReplica(),raw_binary)
 			}
 		}
 		if strings.ToLower(string(value.array[0].str)) == GET {

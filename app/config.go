@@ -7,11 +7,11 @@ import (
 )
 
 type Config struct {
-	Port      int
-	ReplicaOf string
-	MasterHost string
-	MasterPort string
-	masterReplid string
+	Port             int
+	ReplicaOf        string
+	MasterHost       string
+	MasterPort       string
+	masterReplid     string
 	masterReplOffset int
 }
 
