@@ -24,7 +24,11 @@ func main() {
 	fmt.Println("Logs from your program will appear here!")
 
 	if config.IsReplica(){
-		go StartReplicationHandshake(config)
+		error := StartReplicationHandshake(config)
+		if error != nil{
+			fmt.Fprintf(os.Stderr, "handshake failed: %v\n", error)
+			os.Exit(1)
+		}
 	}
 
 	StartServer(config)

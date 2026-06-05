@@ -1,9 +1,10 @@
 package main
-import(
-	"time"
+
+import (
 	"bytes"
 	"net"
 	"strconv"
+	"time"
 )
 
 func RESP_parser(buffer []byte, size int) (Value, error) {
@@ -31,7 +32,7 @@ func write_RESP(type_value Type, strings []string, is_array bool, size int, buff
 			array = append(array, val)
 		}
 		value := Value{
-			typ:   type_value,
+			typ:   Array,
 			array: array,
 		}
 		error := wr.WriteValue(value)
@@ -118,6 +119,22 @@ func handle_prush(connection net.Conn, number_of_elements int, list_id string, a
 	var buffer bytes.Buffer
 	values := []string{strconv.Itoa(len(Lists[list_id]))}
 	if write_RESP(Integer, values, false, 1, &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
+}
+
+func handle_replconf(connection net.Conn) {
+	var buffer bytes.Buffer
+	values := []string{"OK"}
+	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
+		connection.Write(buffer.Bytes())
+	}
+}
+
+func handle_psync(connection net.Conn, config Config){
+	var buffer bytes.Buffer
+	values := []string{"FULLRESYNC" + " " + config.masterReplid + " " + strconv.Itoa(config.masterReplOffset)}
+	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
 		connection.Write(buffer.Bytes())
 	}
 }

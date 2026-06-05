@@ -11,6 +11,8 @@ type Config struct {
 	ReplicaOf string
 	MasterHost string
 	MasterPort string
+	masterReplid string
+	masterReplOffset int
 }
 
 func LoadConfig() Config {
@@ -29,6 +31,9 @@ func LoadConfig() Config {
 			config.MasterHost = parts[0]
 			config.MasterPort = parts[1]
 		}
+	} else {
+		config.masterReplid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+		config.masterReplOffset = 0
 	}
 
 	return config

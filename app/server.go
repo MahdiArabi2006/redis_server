@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-func handleClient(connection net.Conn) {
+func handleClient(connection net.Conn, config Config) {
 	defer connection.Close()
 
 	buffer := make([]byte, 1024)
@@ -23,7 +23,7 @@ func handleClient(connection net.Conn) {
 			continue
 		}
 
-		handleCommand(value, connection)
+		handleCommand(value, connection,config)
 	}
 }
 
@@ -42,6 +42,6 @@ func StartServer(config Config) {
 			continue
 		}
 
-		go handleClient(connection)
+		go handleClient(connection,config)
 	}
 }
