@@ -153,10 +153,21 @@ func handle_psync(connection net.Conn, config Config) {
 func handle_get_config(connection net.Conn, config Config, key string) {
 	var buffer bytes.Buffer
 	var values []string
-	if key == "dir" {
+	switch key {
+	case "dir":
 		values = []string{key, config.dir}
-	} else {
+	case "dbfilename":
 		values = []string{key, config.dbfilename}
+	case "appendonly":
+		values = []string{key, config.appendonly}
+	case "appenddirname":
+		values = []string{key, config.appenddirname}
+	case "appendfilename":
+		values = []string{key, config.appendfilename}
+	case "appendfsync":
+		values = []string{key, config.appendfsync}
+	default:
+		values = []string{key, config.dir}
 	}
 	if write_RESP(SimpleString, values, true, 2, &buffer) == nil {
 		connection.Write(buffer.Bytes())
@@ -180,7 +191,7 @@ func handle_key(connection net.Conn, regex string) {
 		}
 	}
 	dbMu.RUnlock()
-	
+
 	if write_RESP(SimpleString, values, true, len(values), &buffer) == nil {
 		connection.Write(buffer.Bytes())
 	}

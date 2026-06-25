@@ -15,6 +15,10 @@ type Config struct {
 	masterReplOffset int
 	dir              string
 	dbfilename       string
+	appendonly       string
+	appenddirname    string
+	appendfilename   string
+	appendfsync      string
 }
 
 func LoadConfig() Config {
@@ -22,13 +26,21 @@ func LoadConfig() Config {
 	replicaof := flag.String("replicaof", "", "Master server address")
 	dir := flag.String("dir", "", "the path to the directory where the RDB file is stored")
 	dbfilename := flag.String("dbfilename", "", "the name of the RDB file ")
+	appendonly := flag.String("appendonly", "no", "Controls whether AOF persistence is enabled or disabled")
+	appenddirname := flag.String("appenddirname", "appendonlydir", "The subdirectory under dir where AOF and manifest files are stored")
+	appendfilename := flag.String("appendfilename", "appendonly.aof", "The name of the append-only file that records write operations")
+	appendfsync := flag.CommandLine.String("appendfsync", "everysec", "How often buffered writes are flushed to the AOF file on disk")
 	flag.Parse()
 
 	config := Config{
-		Port:      *port,
-		ReplicaOf: *replicaof,
-		dir: *dir,
-		dbfilename: *dbfilename,
+		Port:           *port,
+		ReplicaOf:      *replicaof,
+		dir:            *dir,
+		dbfilename:     *dbfilename,
+		appendonly:     *appendonly,
+		appenddirname:  *appenddirname,
+		appendfilename: *appendfilename,
+		appendfsync:    *appendfsync,
 	}
 
 	if config.ReplicaOf != "" {
