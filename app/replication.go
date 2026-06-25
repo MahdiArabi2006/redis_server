@@ -59,7 +59,7 @@ func readCommandsFromMaster(connection net.Conn, config Config, reader *Reader) 
 			continue
 		}
 
-		handleCommand(value, connection, config, raw)
+		handleCommand(value, connection, config, raw,false)
 	}
 }
 

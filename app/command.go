@@ -21,16 +21,18 @@ const (
 	KEY        string = "keys"
 )
 
-func handleCommand(value Value, connection net.Conn, config Config, raw_binary []byte) {
+func handleCommand(value Value, connection net.Conn, config Config, raw_binary []byte, isAOFLoading bool) {
 	switch value.typ {
 	case Array:
-		if strings.ToLower(string(value.array[0].str)) == ECHO {
+		command := strings.ToLower(string(value.array[0].str))
+
+		if command == ECHO {
 			handle_echo(connection, string(value.array[1].str))
 		}
-		if strings.ToLower(string(value.array[0].str)) == PING {
+		if command == PING {
 			handle_ping(connection)
 		}
-		if strings.ToLower(string(value.array[0].str)) == SET {
+		if command == SET {
 			if len(value.array) > 3 {
 				if strings.ToLower(string(value.array[3].str)) == "px" {
 					px, err := strconv.Atoi(string(value.array[4].str))
@@ -38,30 +40,30 @@ func handleCommand(value Value, connection net.Conn, config Config, raw_binary [
 						connection.Write([]byte("-px must be an positive integer\r\n"))
 						return
 					}
-					handle_set((string(value.array[1].str)), string(value.array[2].str), true, px, connection, !config.IsReplica(), raw_binary)
+					handle_set((string(value.array[1].str)), string(value.array[2].str), true, px, connection, !config.IsReplica(), raw_binary, config,isAOFLoading)
 				}
 			} else {
-				handle_set((string(value.array[1].str)), string(value.array[2].str), false, 0, connection, !config.IsReplica(), raw_binary)
+				handle_set((string(value.array[1].str)), string(value.array[2].str), false, 0, connection, !config.IsReplica(), raw_binary, config,isAOFLoading)
 			}
 		}
-		if strings.ToLower(string(value.array[0].str)) == GET {
+		if command == GET {
 			handle_get(connection, string(value.array[1].str))
 		}
-		if strings.ToLower(string(value.array[0].str)) == PRUSH {
+		if command == PRUSH {
 			handle_prush(connection, len(value.array)-2, string(value.array[1].str), value.array)
 		}
-		if strings.ToLower(string(value.array[0].str)) == REPLCONF {
+		if command == REPLCONF {
 			handle_replconf(connection)
 		}
-		if strings.ToLower(string(value.array[0].str)) == PSYNC {
+		if command == PSYNC {
 			handle_psync(connection, config)
 		}
-		if strings.ToLower(string(value.array[0].str)) == CONFIG {
+		if command == CONFIG {
 			if string(value.array[1].str) == "GET" {
 				handle_get_config(connection, config, string(value.array[2].str))
 			}
 		}
-		if strings.ToLower(string(string(value.array[0].str))) == KEY {
+		if command == KEY {
 			handle_key(connection, string(value.array[1].str))
 		}
 	}

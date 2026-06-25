@@ -22,7 +22,7 @@ func handleClient(connection net.Conn, config Config) {
 			continue
 		}
 
-		handleCommand(value, connection, config, raw)
+		handleCommand(value, connection, config, raw,false)
 	}
 }
 

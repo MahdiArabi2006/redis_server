@@ -1,14 +1,22 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/hex"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
+
+var aofFile *os.File
+var aofMu sync.Mutex
 
 func RESP_parser(buffer []byte, size int) (Value, error) {
 
@@ -64,23 +72,77 @@ func write_RESP(type_value Type, strings []string, is_array bool, size int, buff
 	}
 }
 
-func handle_ping(connection net.Conn) {
+func writeResponse(type_string Type,response []string,is_array bool,size int, connection net.Conn){
 	var buffer bytes.Buffer
-	values := []string{"PONG"}
-	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
+	if write_RESP(type_string, response, is_array, size, &buffer) == nil {
 		connection.Write(buffer.Bytes())
 	}
+}
+
+func getActiveAOFFile(dir string, appendDirName string) (string, error) {
+	manifestPath := filepath.Join(dir, appendDirName, "appendonly.manifest")
+	file, err := os.Open(manifestPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	var activeFile string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "type i") {
+			parts := strings.Split(line, " ")
+			activeFile = parts[1]
+		}
+	}
+
+	if activeFile == "" {
+		return "", fmt.Errorf("no active incr aof file found")
+	}
+	return filepath.Join(dir, appendDirName, activeFile), nil
+}
+
+func write_to_aof(data []byte, config Config) error {
+	aofMu.Lock()
+	defer aofMu.Unlock()
+
+	if aofFile == nil {
+		path, err := getActiveAOFFile(config.dir, config.appenddirname)
+		if err != nil {
+			return err
+		}
+
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return err
+		}
+		aofFile = f
+	}
+
+	_, err := aofFile.Write(data)
+	if err != nil {
+		return err
+	}
+
+	if config.appendfsync == "always" {
+		aofFile.Sync()
+	}
+
+	return nil
+}
+
+func handle_ping(connection net.Conn) {
+	values := []string{"PONG"}
+	writeResponse(SimpleString,values,false,1,connection)
 }
 
 func handle_echo(connection net.Conn, value string) {
-	var buffer bytes.Buffer
 	values := []string{value}
-	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
-		connection.Write(buffer.Bytes())
-	}
+	writeResponse(SimpleString,values,false,1,connection)
 }
 
-func handle_set(key string, value string, has_px bool, px int, connection net.Conn, isMaster bool, data []byte) {
+func handle_set(key string, value string, has_px bool, px int, connection net.Conn, isMaster bool, data []byte, config Config, isAOFLoading bool) {
 	dbMu.Lock()
 
 	DB[key] = value
@@ -96,10 +158,10 @@ func handle_set(key string, value string, has_px bool, px int, connection net.Co
 		})
 	}
 	if isMaster {
-		var buffer bytes.Buffer
-		values := []string{"OK"}
-		if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
-			connection.Write(buffer.Bytes())
+		if !isAOFLoading {
+			write_to_aof(data, config)
+			values := []string{"OK"}
+			writeResponse(SimpleString,values,false,1,connection)	
 		}
 		propagateToReplicas(data)
 	}
@@ -109,11 +171,8 @@ func handle_get(connection net.Conn, key string) {
 	dbMu.RLock()
 	defer dbMu.RUnlock()
 
-	var buffer bytes.Buffer
 	values := []string{DB[key]}
-	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
-		connection.Write(buffer.Bytes())
-	}
+	writeResponse(SimpleString,values,false,1,connection)
 }
 
 func handle_prush(connection net.Conn, number_of_elements int, list_id string, array_values []Value) {
@@ -124,34 +183,24 @@ func handle_prush(connection net.Conn, number_of_elements int, list_id string, a
 		Lists[list_id] = append(Lists[list_id], string(array_values[2+i].str))
 	}
 
-	var buffer bytes.Buffer
 	values := []string{strconv.Itoa(len(Lists[list_id]))}
-	if write_RESP(Integer, values, false, 1, &buffer) == nil {
-		connection.Write(buffer.Bytes())
-	}
+	writeResponse(Integer,values,false,1,connection)
 }
 
 func handle_replconf(connection net.Conn) {
-	var buffer bytes.Buffer
 	values := []string{"OK"}
-	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
-		connection.Write(buffer.Bytes())
-	}
+	writeResponse(SimpleString,values,false,1,connection)
 }
 
 func handle_psync(connection net.Conn, config Config) {
 	var emptyRDB, _ = hex.DecodeString("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")
-	var buffer bytes.Buffer
 	values := []string{"FULLRESYNC" + " " + config.masterReplid + " " + strconv.Itoa(config.masterReplOffset)}
-	if write_RESP(SimpleString, values, false, 1, &buffer) == nil {
-		connection.Write(buffer.Bytes())
-	}
+	writeResponse(SimpleString,values,false,1,connection)
 	connection.Write(append([]byte(fmt.Sprintf("$%d\r\n", len(emptyRDB))), emptyRDB...))
 	addReplica(connection)
 }
 
 func handle_get_config(connection net.Conn, config Config, key string) {
-	var buffer bytes.Buffer
 	var values []string
 	switch key {
 	case "dir":
@@ -169,18 +218,14 @@ func handle_get_config(connection net.Conn, config Config, key string) {
 	default:
 		values = []string{key, config.dir}
 	}
-	if write_RESP(SimpleString, values, true, 2, &buffer) == nil {
-		connection.Write(buffer.Bytes())
-	}
+	writeResponse(SimpleString,values,true,2,connection)
 }
 
 func handle_key(connection net.Conn, regex string) {
-	var buffer bytes.Buffer
 	values := []string{}
 	reg, error := regexp.Compile(regex)
 	if error != nil {
-		write_RESP(Error, []string{"ERR invalid regex"}, false, 0, &buffer)
-		connection.Write(buffer.Bytes())
+		writeResponse(Error,[]string{"ERR invalid regex"},false,0,connection)
 		return
 	}
 
@@ -192,7 +237,5 @@ func handle_key(connection net.Conn, regex string) {
 	}
 	dbMu.RUnlock()
 
-	if write_RESP(SimpleString, values, true, len(values), &buffer) == nil {
-		connection.Write(buffer.Bytes())
-	}
+	writeResponse(SimpleString,values,true,len(values),connection)
 }
