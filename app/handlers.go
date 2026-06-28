@@ -72,7 +72,7 @@ func write_RESP(type_value Type, strings []string, is_array bool, size int, buff
 	}
 }
 
-func writeResponse(type_string Type,response []string,is_array bool,size int, connection net.Conn){
+func writeResponse(type_string Type, response []string, is_array bool, size int, connection net.Conn) {
 	var buffer bytes.Buffer
 	if write_RESP(type_string, response, is_array, size, &buffer) == nil {
 		connection.Write(buffer.Bytes())
@@ -134,12 +134,12 @@ func write_to_aof(data []byte, config Config) error {
 
 func handle_ping(connection net.Conn) {
 	values := []string{"PONG"}
-	writeResponse(SimpleString,values,false,1,connection)
+	writeResponse(SimpleString, values, false, 1, connection)
 }
 
 func handle_echo(connection net.Conn, value string) {
 	values := []string{value}
-	writeResponse(SimpleString,values,false,1,connection)
+	writeResponse(SimpleString, values, false, 1, connection)
 }
 
 func handle_set(key string, value string, has_px bool, px int, connection net.Conn, isMaster bool, data []byte, config Config, isAOFLoading bool) {
@@ -161,7 +161,7 @@ func handle_set(key string, value string, has_px bool, px int, connection net.Co
 		if !isAOFLoading {
 			write_to_aof(data, config)
 			values := []string{"OK"}
-			writeResponse(SimpleString,values,false,1,connection)	
+			writeResponse(SimpleString, values, false, 1, connection)
 		}
 		propagateToReplicas(data)
 	}
@@ -172,7 +172,7 @@ func handle_get(connection net.Conn, key string) {
 	defer dbMu.RUnlock()
 
 	values := []string{DB[key]}
-	writeResponse(SimpleString,values,false,1,connection)
+	writeResponse(SimpleString, values, false, 1, connection)
 }
 
 func handle_prush(connection net.Conn, number_of_elements int, list_id string, array_values []Value) {
@@ -184,18 +184,108 @@ func handle_prush(connection net.Conn, number_of_elements int, list_id string, a
 	}
 
 	values := []string{strconv.Itoa(len(Lists[list_id]))}
-	writeResponse(Integer,values,false,1,connection)
+	writeResponse(Integer, values, false, 1, connection)
+}
+
+func handle_lrange(connection net.Conn, start string, stop string, list_id string) {
+	listsMu.Lock()
+	defer listsMu.Unlock()
+
+	start_index, err := strconv.Atoi(start)
+	if err != nil {
+		writeResponse(Error, []string{"start index must be an integer"}, false, 0, connection)
+		return
+	}
+	stop_index, err := strconv.Atoi(stop)
+	if err != nil {
+		writeResponse(Error, []string{"start index must be an integer"}, false, 0, connection)
+		return
+	}
+
+	if Lists[list_id] == nil {
+		writeResponse(SimpleString, []string{}, true, 0, connection)
+		return
+	}
+
+	if start_index < 0 {
+		start_index = max(len(Lists[list_id])+start_index, 0)
+	}
+	if stop_index < 0 {
+		stop_index = max(len(Lists[list_id])+stop_index, 0)
+	}
+
+	if start_index >= len(Lists[list_id]) {
+		writeResponse(SimpleString, []string{}, true, 0, connection)
+		return
+	}
+
+	if stop_index >= len(Lists[list_id]) {
+		stop_index = len(Lists[list_id]) - 1
+	}
+
+	if start_index > stop_index {
+		writeResponse(SimpleString, []string{}, true, 0, connection)
+		return
+	}
+
+	values := []string{}
+
+	for i := start_index; i <= stop_index; i++ {
+		values = append(values, Lists[list_id][i])
+	}
+
+	writeResponse(SimpleString, values, true, stop_index-start_index+1, connection)
+}
+
+func handle_llen(connection net.Conn, list_id string) {
+	listsMu.Lock()
+	defer listsMu.Unlock()
+
+	if Lists[list_id] == nil {
+		writeResponse(Integer, []string{"0"}, false, 1, connection)
+		return
+	}
+
+	values := []string{strconv.Itoa(len(Lists[list_id]))}
+	writeResponse(Integer, values, false, 1, connection)
+}
+
+func handle_lpop(connection net.Conn, list_id string, multiple_pop bool, n int) {
+	listsMu.Lock()
+	defer listsMu.Unlock()
+
+	if Lists[list_id] == nil {
+		writeResponse(BulkString, []string{""}, false, 1, connection)
+		return
+	}
+	if multiple_pop {
+		size := len(Lists[list_id])
+		if n > size {
+			writeResponse(SimpleString, Lists[list_id], true, size, connection)
+			Lists[list_id] = Lists[list_id][:0]
+			return
+		} else {
+			writeResponse(SimpleString, Lists[list_id][0:n], true, n, connection)
+			Lists[list_id] = Lists[list_id][n:]
+			return
+		}
+	} else if len(Lists[list_id]) > 0 {
+		writeResponse(SimpleString, []string{Lists[list_id][0]}, false, 1, connection)
+		Lists[list_id] = Lists[list_id][1:]
+		return
+	}
+	writeResponse(BulkString, []string{""}, false, 1, connection)
 }
 
 func handle_replconf(connection net.Conn) {
 	values := []string{"OK"}
-	writeResponse(SimpleString,values,false,1,connection)
+	writeResponse(SimpleString, values, false, 1, connection)
 }
 
 func handle_psync(connection net.Conn, config Config) {
 	var emptyRDB, _ = hex.DecodeString("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")
 	values := []string{"FULLRESYNC" + " " + config.masterReplid + " " + strconv.Itoa(config.masterReplOffset)}
-	writeResponse(SimpleString,values,false,1,connection)
+	writeResponse(SimpleString, values, false, 1, connection)
 	connection.Write(append([]byte(fmt.Sprintf("$%d\r\n", len(emptyRDB))), emptyRDB...))
 	addReplica(connection)
 }
@@ -218,14 +308,14 @@ func handle_get_config(connection net.Conn, config Config, key string) {
 	default:
 		values = []string{key, config.dir}
 	}
-	writeResponse(SimpleString,values,true,2,connection)
+	writeResponse(SimpleString, values, true, 2, connection)
 }
 
 func handle_key(connection net.Conn, regex string) {
 	values := []string{}
 	reg, error := regexp.Compile(regex)
 	if error != nil {
-		writeResponse(Error,[]string{"ERR invalid regex"},false,0,connection)
+		writeResponse(Error, []string{"ERR invalid regex"}, false, 0, connection)
 		return
 	}
 
@@ -237,5 +327,5 @@ func handle_key(connection net.Conn, regex string) {
 	}
 	dbMu.RUnlock()
 
-	writeResponse(SimpleString,values,true,len(values),connection)
+	writeResponse(SimpleString, values, true, len(values), connection)
 }

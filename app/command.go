@@ -13,6 +13,10 @@ const (
 	SET        string = "set"
 	GET        string = "get"
 	PRUSH      string = "prush"
+	LRANGE     string = "lrange"
+	LPUSH      string = "lpush"
+	LLEN       string = "llen"
+	LPOP       string = "lpop"
 	REPLCONF   string = "replconf"
 	OK         string = "ok"
 	PSYNC      string = "psync"
@@ -40,10 +44,10 @@ func handleCommand(value Value, connection net.Conn, config Config, raw_binary [
 						connection.Write([]byte("-px must be an positive integer\r\n"))
 						return
 					}
-					handle_set((string(value.array[1].str)), string(value.array[2].str), true, px, connection, !config.IsReplica(), raw_binary, config,isAOFLoading)
+					handle_set((string(value.array[1].str)), string(value.array[2].str), true, px, connection, !config.IsReplica(), raw_binary, config, isAOFLoading)
 				}
 			} else {
-				handle_set((string(value.array[1].str)), string(value.array[2].str), false, 0, connection, !config.IsReplica(), raw_binary, config,isAOFLoading)
+				handle_set((string(value.array[1].str)), string(value.array[2].str), false, 0, connection, !config.IsReplica(), raw_binary, config, isAOFLoading)
 			}
 		}
 		if command == GET {
@@ -51,6 +55,27 @@ func handleCommand(value Value, connection net.Conn, config Config, raw_binary [
 		}
 		if command == PRUSH {
 			handle_prush(connection, len(value.array)-2, string(value.array[1].str), value.array)
+		}
+		if command == LRANGE {
+			handle_lrange(connection, string(value.array[2].str), string(value.array[3].str), string(value.array[1].str))
+		}
+		if command == LPUSH {
+
+		}
+		if command == LLEN {
+			handle_llen(connection, string(value.array[1].str))
+		}
+		if command == LPOP {
+			if len(value.array) > 2 {
+				n, err := strconv.Atoi(string(value.array[2].str))
+				if err != nil {
+					connection.Write([]byte("pass a number\r\n"))
+					return
+				}
+				handle_lpop(connection, string(value.array[1].str), true, n)
+			} else {
+				handle_lpop(connection, string(value.array[1].str), false, 0)
+			}
 		}
 		if command == REPLCONF {
 			handle_replconf(connection)
