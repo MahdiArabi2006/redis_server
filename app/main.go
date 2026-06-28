@@ -14,10 +14,31 @@ var (
 	_ = os.Exit
 )
 
-var DB = make(map[string]string)
-var dbMu sync.RWMutex
-var Lists = map[string][]string{}
-var listsMu sync.RWMutex
+type ValueType int
+
+const (
+    StringType    ValueType = 0
+    ListType      ValueType = 1
+    SetType       ValueType = 2
+    HashType      ValueType = 3
+    ZSetType      ValueType = 4
+    StreamType    ValueType = 5
+    VectorSetType ValueType = 6
+)
+
+type Entry struct {
+    Type  ValueType
+    Value any
+}
+
+type Store struct {
+    sync.RWMutex
+    Data map[string]*Entry
+}
+
+var DB = Store{
+    Data: make(map[string]*Entry),
+}
 
 func main() {
 	config := LoadConfig()

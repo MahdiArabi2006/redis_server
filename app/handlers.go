@@ -143,18 +143,21 @@ func handle_echo(connection net.Conn, value string) {
 }
 
 func handle_set(key string, value string, has_px bool, px int, connection net.Conn, isMaster bool, data []byte, config Config, isAOFLoading bool) {
-	dbMu.Lock()
+	DB.Lock()
 
-	DB[key] = value
+	DB.Data[key] = &Entry{
+		Type:  StringType,
+		Value: value,
+	}
 
-	dbMu.Unlock()
+	DB.Unlock()
 
 	if has_px {
 		delay := px * int(time.Millisecond)
 		time.AfterFunc(time.Duration(delay), func() {
-			dbMu.Lock()
-			delete(DB, key)
-			dbMu.Unlock()
+			DB.Lock()
+			delete(DB.Data, key)
+			DB.Unlock()
 		})
 	}
 	if isMaster {
@@ -168,28 +171,51 @@ func handle_set(key string, value string, has_px bool, px int, connection net.Co
 }
 
 func handle_get(connection net.Conn, key string) {
-	dbMu.RLock()
-	defer dbMu.RUnlock()
+	DB.RLock()
+	entry := DB.Data[key]
+	DB.RUnlock()
 
-	values := []string{DB[key]}
+	if entry.Type != StringType {
+		writeResponse(Error, []string{"it is not a string type"}, false, 0, connection)
+	}
+
+	values := []string{entry.Value.(string)}
 	writeResponse(SimpleString, values, false, 1, connection)
 }
 
 func handle_prush(connection net.Conn, number_of_elements int, list_id string, array_values []Value) {
-	listsMu.Lock()
-	defer listsMu.Unlock()
+	DB.Lock()
+	defer DB.Unlock()
 
-	for i := range number_of_elements {
-		Lists[list_id] = append(Lists[list_id], string(array_values[2+i].str))
+	entry, ok := DB.Data[list_id]
+
+	if !ok {
+		entry = &Entry{
+			Type:  ListType,
+			Value: []string{},
+		}
+		DB.Data[list_id] = entry
 	}
 
-	values := []string{strconv.Itoa(len(Lists[list_id]))}
+	if entry.Type != ListType {
+		writeResponse(Error, []string{"it is not a list type"}, false, 0, connection)
+	}
+
+	list := entry.Value.([]string)
+
+	for i := range number_of_elements {
+		list = append(list, string(array_values[2+i].str))
+	}
+
+	entry.Value = list
+
+	values := []string{strconv.Itoa(len(list))}
 	writeResponse(Integer, values, false, 1, connection)
 }
 
 func handle_lrange(connection net.Conn, start string, stop string, list_id string) {
-	listsMu.Lock()
-	defer listsMu.Unlock()
+	DB.Lock()
+	defer DB.Unlock()
 
 	start_index, err := strconv.Atoi(start)
 	if err != nil {
@@ -202,25 +228,34 @@ func handle_lrange(connection net.Conn, start string, stop string, list_id strin
 		return
 	}
 
-	if Lists[list_id] == nil {
+	entry, ok := DB.Data[list_id]
+
+	if !ok {
 		writeResponse(SimpleString, []string{}, true, 0, connection)
 		return
 	}
+
+	if entry.Type != ListType {
+		writeResponse(Error, []string{"it is not a list type"}, false, 0, connection)
+	}
+
+	list := entry.Value.([]string)
 
 	if start_index < 0 {
-		start_index = max(len(Lists[list_id])+start_index, 0)
-	}
-	if stop_index < 0 {
-		stop_index = max(len(Lists[list_id])+stop_index, 0)
+		start_index = max(len(list)+start_index, 0)
 	}
 
-	if start_index >= len(Lists[list_id]) {
+	if stop_index < 0 {
+		stop_index = max(len(list)+stop_index, 0)
+	}
+
+	if start_index >= len(list) {
 		writeResponse(SimpleString, []string{}, true, 0, connection)
 		return
 	}
 
-	if stop_index >= len(Lists[list_id]) {
-		stop_index = len(Lists[list_id]) - 1
+	if stop_index >= len(list) {
+		stop_index = len(list) - 1
 	}
 
 	if start_index > stop_index {
@@ -231,47 +266,59 @@ func handle_lrange(connection net.Conn, start string, stop string, list_id strin
 	values := []string{}
 
 	for i := start_index; i <= stop_index; i++ {
-		values = append(values, Lists[list_id][i])
+		values = append(values, list[i])
 	}
 
 	writeResponse(SimpleString, values, true, stop_index-start_index+1, connection)
 }
 
 func handle_llen(connection net.Conn, list_id string) {
-	listsMu.Lock()
-	defer listsMu.Unlock()
+	DB.Lock()
+	defer DB.Unlock()
 
-	if Lists[list_id] == nil {
+	entry, ok := DB.Data[list_id]
+
+	if !ok {
 		writeResponse(Integer, []string{"0"}, false, 1, connection)
 		return
 	}
 
-	values := []string{strconv.Itoa(len(Lists[list_id]))}
+	list := entry.Value.([]string)
+
+	values := []string{strconv.Itoa(len(list))}
 	writeResponse(Integer, values, false, 1, connection)
 }
 
 func handle_lpop(connection net.Conn, list_id string, multiple_pop bool, n int) {
-	listsMu.Lock()
-	defer listsMu.Unlock()
+	DB.Lock()
+	defer DB.Unlock()
 
-	if Lists[list_id] == nil {
+	entry, ok := DB.Data[list_id]
+
+	if !ok {
 		writeResponse(BulkString, []string{""}, false, 1, connection)
 		return
 	}
+
+	list := entry.Value.([]string)
+
 	if multiple_pop {
-		size := len(Lists[list_id])
+		size := len(list)
 		if n > size {
-			writeResponse(SimpleString, Lists[list_id], true, size, connection)
-			Lists[list_id] = Lists[list_id][:0]
+			writeResponse(SimpleString, list, true, size, connection)
+			list = list[:0]
+			entry.Value = list
 			return
 		} else {
-			writeResponse(SimpleString, Lists[list_id][0:n], true, n, connection)
-			Lists[list_id] = Lists[list_id][n:]
+			writeResponse(SimpleString, list[0:n], true, n, connection)
+			list = list[n:]
+			entry.Value = list
 			return
 		}
-	} else if len(Lists[list_id]) > 0 {
-		writeResponse(SimpleString, []string{Lists[list_id][0]}, false, 1, connection)
-		Lists[list_id] = Lists[list_id][1:]
+	} else if len(list) > 0 {
+		writeResponse(SimpleString, []string{list[0]}, false, 1, connection)
+		list = list[1:]
+		entry.Value = list
 		return
 	}
 	writeResponse(BulkString, []string{""}, false, 1, connection)
@@ -319,13 +366,42 @@ func handle_key(connection net.Conn, regex string) {
 		return
 	}
 
-	dbMu.RLock()
-	for key := range DB {
-		if reg.MatchString(key) {
+	DB.RLock()
+	for key, entry := range DB.Data {
+		if entry.Type == StringType && reg.MatchString(key) {
 			values = append(values, key)
 		}
 	}
-	dbMu.RUnlock()
+	DB.RUnlock()
 
 	writeResponse(SimpleString, values, true, len(values), connection)
+}
+
+func handle_type(connection net.Conn, key string) {
+	DB.RLock()
+	defer DB.RUnlock()
+
+	entry, ok := DB.Data[key]
+
+	if !ok {
+		writeResponse(SimpleString, []string{"none"}, false, 1, connection)
+		return
+	}
+
+	switch entry.Type {
+	case 0:
+		writeResponse(SimpleString, []string{"string"}, false, 0, connection)
+	case 1:
+		writeResponse(SimpleString, []string{"list"}, false, 0, connection)
+	case 2:
+		writeResponse(SimpleString, []string{"set"}, false, 0, connection)
+	case 3:
+		writeResponse(SimpleString, []string{"hash"}, false, 0, connection)
+	case 4:
+		writeResponse(SimpleString, []string{"zset"}, false, 0, connection)
+	case 5:
+		writeResponse(SimpleString, []string{"stream"}, false, 0, connection)
+	case 6:
+		writeResponse(SimpleString, []string{"vectorset"}, false, 0, connection)
+	}
 }

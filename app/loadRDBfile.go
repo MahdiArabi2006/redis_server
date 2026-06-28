@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
-	"maps"
 	"os"
 )
 
@@ -85,9 +84,9 @@ func parseMetadataSection(data []byte, pos *int) (map[string]string, error) {
 	return metadata, nil
 }
 
-func parseDatabaseSection(data []byte, pos *int) (map[string]string, error) {
+func parseDatabaseSection(data []byte, pos *int) (map[string]*Entry, error) {
 	log.Println("start parsing database section")
-	db := make(map[string]string)
+	db := make(map[string]*Entry)
 
 	for *pos < len(data) {
 		prefix := data[*pos]
@@ -164,7 +163,10 @@ func parseDatabaseSection(data []byte, pos *int) (map[string]string, error) {
 
 			log.Println("key, value:", key, val)
 
-			db[key] = val
+			db[key] = &Entry{
+				Type:  StringType,
+				Value: val,
+			}
 			continue
 		}
 
@@ -217,7 +219,12 @@ func loadRDBIntoStore(config Config) error {
 		return err
 	}
 
-	maps.Copy(DB, db)
+	DB.Lock()
+	defer DB.Unlock()
+
+	for k, v := range db {
+		DB.Data[k] = v
+	}
 
 	return nil
 }

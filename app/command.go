@@ -23,6 +23,7 @@ const (
 	FULLRESYNC string = "fullresync"
 	CONFIG     string = "config"
 	KEY        string = "keys"
+	TYPE       string = "type"
 )
 
 func handleCommand(value Value, connection net.Conn, config Config, raw_binary []byte, isAOFLoading bool) {
@@ -90,6 +91,9 @@ func handleCommand(value Value, connection net.Conn, config Config, raw_binary [
 		}
 		if command == KEY {
 			handle_key(connection, string(value.array[1].str))
+		}
+		if command == TYPE {
+			handle_type(connection, string(value.array[1].str))
 		}
 	}
 }
