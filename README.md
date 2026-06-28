@@ -6,7 +6,7 @@ A high-performance, lightweight Redis server clone built from scratch to deeply 
 
 ### 1. Data Types
 * **Strings**: Full support for key-value string pairs with fast lookups.
-* **Lists**: Implemented linked-list structures allowing head/tail operations (`LPUSH`, `RPUSH`, `LPOP`, `RPOP`).
+* **Lists**: Implemented linked-list structures allowing head/tail operations.
 
 ### 2. High Availability & Replication (Master/Replica)
 * Implemented leader-follower **Replication architecture**.
